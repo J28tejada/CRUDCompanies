@@ -16,42 +16,85 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
 
-app.MapGet("/compañias", () =>
-{
-    return ("compañias y empleados");
-})
-.WithName("compañias")
-.WithOpenApi();
+// Lista en memoria para almacenar compañías y empleados
+List<Company> companies = new List<Company>();
 
-app.MapPost("/compañiasPost", () =>
-{
-    return ("Enviar compañias y empleados");
-})
-.WithName("compañiasPost")
-.WithOpenApi();
+// Obtener todas las compañías
+app.MapGet("/compañias", () => Results.Ok(companies));
 
-app.MapPut("/compañiasPut", () =>
+// Obtener una compañía por ID
+app.MapGet("/compañias/{id}", (int id) =>
 {
-    return ("compañias y empleados");
-})
-.WithName("compañiasPut")
-.WithOpenApi();
+    var company = companies.FirstOrDefault(c => c.Id == id);
+    return company is not null ? Results.Ok(company) : Results.NotFound($"No se encontró la compañía con ID {id}");
+});
 
-app.MapDelete("/compañiasDelete", () =>
+// Crear una nueva compañía
+app.MapPost("/compañias", (Company company) =>
 {
-    return ("compañias y empleados");
-})
-.WithName("compañiasDelete")
-.WithOpenApi();
+    company.Id = companies.Count + 1;
+    companies.Add(company);
+    return Results.Created($"/compañias/{company.Id}", company);
+});
+
+// Actualizar una compañía existente
+app.MapPut("/compañias/{id}", (int id, Company updatedCompany) =>
+{
+    var company = companies.FirstOrDefault(c => c.Id == id);
+    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
+
+    company.Name = updatedCompany.Name;
+    company.Employees = updatedCompany.Employees;
+    return Results.Ok(company);
+});
+
+// Eliminar una compañía por ID
+app.MapDelete("/compañias/{id}", (int id) =>
+{
+    var company = companies.FirstOrDefault(c => c.Id == id);
+    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
+
+    companies.Remove(company);
+    return Results.Ok($"Compañía con ID {id} eliminada");
+});
+
+// Agregar un empleado a una compañía
+app.MapPost("/compañias/{companyId}/empleados", (int companyId, Employee employee) =>
+{
+    var company = companies.FirstOrDefault(c => c.Id == companyId);
+    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {companyId}");
+
+    employee.Id = company.Employees.Count + 1; 
+    company.Employees.Add(employee);
+    return Results.Created($"/compañias/{companyId}/empleados/{employee.Id}", employee);
+});
+
+// Eliminar un empleado de una compañía
+app.MapDelete("/compañias/{companyId}/empleados/{employeeId}", (int companyId, int employeeId) =>
+{
+    var company = companies.FirstOrDefault(c => c.Id == companyId);
+    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {companyId}");
+
+    var employee = company.Employees.FirstOrDefault(e => e.Id == employeeId);
+    if (employee is null) return Results.NotFound($"No se encontró el empleado con ID {employeeId}");
+
+    company.Employees.Remove(employee);
+    return Results.Ok($"Empleado con ID {employeeId} eliminado de la compañía {company.Name}");
+});
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+class Company
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public List<Employee> Employees { get; set; } = new();
+}
+
+class Employee
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Position { get; set; } = string.Empty;
 }
