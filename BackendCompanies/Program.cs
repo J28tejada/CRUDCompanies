@@ -16,30 +16,35 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.Urls.Add("http://localhost:5040");
 
 // Lista en memoria para almacenar compañías y empleados
 List<Company> companies = new List<Company>();
 
 // Obtener todas las compañías
-app.MapGet("/compañias", () => Results.Ok(companies));
+app.MapGet("/companies", () => Results.Ok(companies));
 
 // Obtener una compañía por ID
-app.MapGet("/compañias/{id}", (int id) =>
+app.MapGet("/companies/{id}", (int id) =>
 {
     var company = companies.FirstOrDefault(c => c.Id == id);
     return company is not null ? Results.Ok(company) : Results.NotFound($"No se encontró la compañía con ID {id}");
 });
 
 // Crear una nueva compañía
-app.MapPost("/compañias", (Company company) =>
+app.MapPost("/companies", (CompanyRequest companyRequest) =>
 {
-    company.Id = companies.Count + 1;
+    var company = new Company
+    {
+        Id = companies.Count + 1, // Generar ID simple
+        Name = companyRequest.Name
+    };
     companies.Add(company);
-    return Results.Created($"/compañias/{company.Id}", company);
+    return Results.Created($"/companies/{company.Id}", company);
 });
 
 // Actualizar una compañía existente
-app.MapPut("/compañias/{id}", (int id, Company updatedCompany) =>
+app.MapPut("/companies/{id}", (int id, Company updatedCompany) =>
 {
     var company = companies.FirstOrDefault(c => c.Id == id);
     if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
@@ -49,29 +54,26 @@ app.MapPut("/compañias/{id}", (int id, Company updatedCompany) =>
     return Results.Ok(company);
 });
 
-// Eliminar una compañía por ID
-app.MapDelete("/compañias/{id}", (int id) =>
-{
-    var company = companies.FirstOrDefault(c => c.Id == id);
-    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
-
-    companies.Remove(company);
-    return Results.Ok($"Compañía con ID {id} eliminada");
-});
-
 // Agregar un empleado a una compañía
-app.MapPost("/compañias/{companyId}/empleados", (int companyId, Employee employee) =>
+app.MapPost("/companies/{companyId}/employees", (int companyId, EmployeeRequest employeeRequest) =>
 {
     var company = companies.FirstOrDefault(c => c.Id == companyId);
     if (company is null) return Results.NotFound($"No se encontró la compañía con ID {companyId}");
 
-    employee.Id = company.Employees.Count + 1; 
+    var employee = new Employee
+    {
+        Id = company.Employees.Count + 1,
+        Name = employeeRequest.Name,
+        Position = employeeRequest.Position
+    };
+    company.Employees ??= new List<Employee>();
     company.Employees.Add(employee);
-    return Results.Created($"/compañias/{companyId}/empleados/{employee.Id}", employee);
+
+    return Results.Created($"/companies/{companyId}/employee/{employee.Id}", employee);
 });
 
 // Eliminar un empleado de una compañía
-app.MapDelete("/compañias/{companyId}/empleados/{employeeId}", (int companyId, int employeeId) =>
+app.MapDelete("/companies/{companyId}/employess/{employeeId}", (int companyId, int employeeId) =>
 {
     var company = companies.FirstOrDefault(c => c.Id == companyId);
     if (company is null) return Results.NotFound($"No se encontró la compañía con ID {companyId}");
@@ -83,18 +85,55 @@ app.MapDelete("/compañias/{companyId}/empleados/{employeeId}", (int companyId, 
     return Results.Ok($"Empleado con ID {employeeId} eliminado de la compañía {company.Name}");
 });
 
+
+// DELETE: No permitir eliminar una compañía si tiene empleados
+app.MapDelete("/companies/{id}", (int id) =>
+{
+    var company = companies.FirstOrDefault(c => c.Id == id);
+    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
+
+    if (company.Employees.Any())
+    {
+        return Results.BadRequest($"No se puede eliminar la compañía {id} porque tiene empleados asociados. Usa el endpoint DELETE /companies/{id}/force si deseas eliminarla con sus empleados.");
+    }
+
+    companies.Remove(company);
+    return Results.Ok($"Compañía {id} eliminada exitosamente.");
+});
+
+// DELETE: Permitir eliminar una compañía junto con todos sus empleados
+app.MapDelete("/companies/{id}/force", (int id) =>
+{
+    var company = companies.FirstOrDefault(c => c.Id == id);
+    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
+
+    companies.Remove(company);
+    return Results.Ok($"Compañía {id} y todos sus empleados eliminados exitosamente.");
+});
+
 app.Run();
 
 class Company
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
-    public List<Employee> Employees { get; set; } = new();
+    public List<Employee> Employees { get; set; } = new(); // Relación Uno a Muchos
 }
 
 class Employee
 {
     public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Position { get; set; } = string.Empty;
+}
+
+class CompanyRequest
+{
+    public string Name { get; set; } = string.Empty;
+}
+
+class EmployeeRequest
+{
     public string Name { get; set; } = string.Empty;
     public string Position { get; set; } = string.Empty;
 }
