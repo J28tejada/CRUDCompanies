@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var issuer = "mi-real-issuer";
@@ -90,6 +91,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=app.db"));
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -108,20 +112,9 @@ app.Urls.Add("http://localhost:5040");
 // Lista en memoria para almacenar compañías y empleados
 List<Company> companies = new List<Company>();
 
-//app.MapGet("token", (User user) => (
-//    if (user.Username == "admin" && user.Password == "admin")
-    
-
-
-
-//app.MapGet("login", () => {return GenerateToken ("admin", "customer", 3);})
-//.WithName("GetToken")
-//.WithOpenApi();
-
-
-
 // Obtener todas las compañías
-app.MapGet("/companies", () => Results.Ok(companies))
+app.MapGet("/companies", async (AppDbContext db) => 
+    await db.Companies.ToListAsync())
 .RequireAuthorization();
 
 // Obtener una compañía por ID
@@ -149,15 +142,16 @@ app.MapPost("/login", (User user) =>
     return Results.Unauthorized();
 });
 
-
 // Crear una nueva compañía
-app.MapPost("/companies", (CompanyRequest companyRequest) =>
+app.MapPost("/companies", async (CompanyRequest companyRequest, AppDbContext db) =>
 {
     var company = new Company
     {
         Id = companies.Count + 1, // Generar ID simple
         Name = companyRequest.Name
     };
+    db.Companies.Add(company);
+    await db.SaveChangesAsync();
     companies.Add(company);
     return Results.Created($"/companies/{company.Id}", company);
 });
@@ -207,19 +201,25 @@ app.MapDelete("/companies/{companyId}/employes/{employeeId}", (int companyId, in
 
 
 // No permitir eliminar una compañía si tiene empleados
-app.MapDelete("/companies/{id}", (int id) =>
+app.MapDelete("/companies/{id}", async (int id, AppDbContext db) =>
 {
-    var company = companies.FirstOrDefault(c => c.Id == id);
-    if (company is null) return Results.NotFound($"No se encontró la compañía con ID {id}");
+    var company = await db.Companies.Include(c => c.Employees).FirstOrDefaultAsync(c => c.Id == id);
+    if (company == null)
+    {
+        return Results.NotFound($"No se encontró la compañía con ID {id}");
+    }
 
     if (company.Employees.Any())
     {
         return Results.BadRequest($"No se puede eliminar la compañía {id} porque tiene empleados asociados. Usa el endpoint DELETE /companies/{id}/force si deseas eliminarla con sus empleados.");
     }
 
-    companies.Remove(company);
+    db.Companies.Remove(company);
+    await db.SaveChangesAsync();
+
     return Results.Ok($"Compañía {id} eliminada exitosamente.");
 });
+
 
 // Permitir eliminar una compañía junto con todos sus empleados
 app.MapDelete("/companies/{id}/force", (int id) =>
@@ -240,14 +240,14 @@ class User
 }
 
 
-class Company
+public class Company
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public List<Employee> Employees { get; set; } = new(); // Relación Uno a Muchos
 }
 
-class Employee
+public class Employee
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
